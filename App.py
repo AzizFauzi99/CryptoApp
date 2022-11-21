@@ -53,7 +53,56 @@ def signin():
         global Key
         global keypath
 
+        def encode_caesar(message):
+            kunci  = 13
+            result = ""
+            # traverse text
+            for i in range(len(message)):
+                char = message[i]
+
+                if (char.isspace()):
+                    result += ' '
+                elif (ord(char) >= 48 & ord(char) <= 57):
+                    result += char
+                elif ((ord(char) >= 65 & ord(char) <= 90) | (ord(char) >= 97 & ord(char) <= 122)):
+                    # Encrypt uppercase characters
+                    if (char.isupper()):
+                        result += chr((ord(char) + kunci -65) % 26 + 65)
+            
+                    # Encrypt lowercase characters
+                    else:
+                        result += chr((ord(char) + kunci - 97) % 26 + 97)
+                else:
+                    result += char
+            return result
+
+        def decode_caesar(message):
+            kunci = 13
+            result = ""
+            # traverse text
+            for i in range(len(message)):
+                char = message[i]
+
+                if (char.isspace()):
+                    result += ' '
+                elif (ord(char) >= 48 & ord(char) <= 57):
+                    result += char
+                elif ((ord(char) >= 65 & ord(char) <= 90) | (ord(char) >= 97 & ord(char) <= 122)):
+                    # Encrypt uppercase characters
+                    if (char.isupper()):
+                        result += chr((ord(char) + kunci - 65) % 26 + 65)
+            
+                    # Encrypt lowercase characters
+                    else:
+                        result += chr((ord(char) + kunci - 97) % 26 + 97)
+                else:
+                    result += char
+            return result
+
+
         def Encode(key,message):
+            
+            message = encode_caesar(message)
             enc=[]
             for i in range(len(message)):
                 key_c = key[i % len(key)]
@@ -66,7 +115,11 @@ def signin():
             for i in range(len(message)):
                 key_c = key[i % len(key)]
                 dec.append(chr((256 + ord(message[i])- ord(key_c)) % 256))
-            return "".join(dec)
+            
+            # return "".join(dec)
+            res = "".join(dec)
+            result = decode_caesar(res)
+            return result
 
         def Mode():
             if(mode.get() == 'e'):

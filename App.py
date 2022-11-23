@@ -6,16 +6,18 @@ import base64
 from tkinter import ttk, filedialog
 from tkinter.filedialog import askopenfile
 from cryptography.fernet import Fernet
+import codecs
 
 root = Tk()
 root.title("Login")
 root.geometry('925x500+300+200')
 root.configure(bg="#fff")
 root.resizable(False, False)
+MOD = 256
 
 def signin():
     username = user.get()
-
+    
     # encrypt password using md5 hash
     # reference: https://www.geeksforgeeks.org/md5-hash-python/?ref=lbp
     password = code.get()
@@ -53,7 +55,7 @@ def signin():
         global Key
         global keypath
 
-        def encode_caesar(message):
+        def ROT13(message):
             kunci  = 13
             result = ""
             # traverse text
@@ -76,56 +78,101 @@ def signin():
                     result += char
             return result
 
-        def decode_caesar(message):
-            kunci = 13
-            result = ""
-            # traverse text
-            for i in range(len(message)):
-                char = message[i]
+        # RC4
+        def KSA(key):
+            ''' Key Scheduling Algorithm (from wikipedia):
+                for i from 0 to 255
+                    S[i] := i
+                endfor
+                j := 0
+                for i from 0 to 255
+                    j := (j + S[i] + key[i mod keylength]) mod 256
+                    swap values of S[i] and S[j]
+                endfor
+            '''
+            key_length = len(key)
+            # create the array "S"
+            S = list(range(MOD))  # [0,1,2, ... , 255]
+            j = 0
+            for i in range(MOD):
+                j = (j + S[i] + key[i % key_length]) % MOD
+                S[i], S[j] = S[j], S[i]  # swap values
 
-                if (char.isspace()):
-                    result += ' '
-                elif (ord(char) >= 48 & ord(char) <= 57):
-                    result += char
-                elif ((ord(char) >= 65 & ord(char) <= 90) | (ord(char) >= 97 & ord(char) <= 122)):
-                    # Encrypt uppercase characters
-                    if (char.isupper()):
-                        result += chr((ord(char) + kunci - 65) % 26 + 65)
-            
-                    # Encrypt lowercase characters
-                    else:
-                        result += chr((ord(char) + kunci - 97) % 26 + 97)
-                else:
-                    result += char
-            return result
+            return S
 
 
-        def Encode(key,message):
-            
-            message = encode_caesar(message)
-            enc=[]
-            for i in range(len(message)):
-                key_c = key[i % len(key)]
-                enc.append(chr((ord(message[i]) + ord(key_c)) % 256))
-            return base64.urlsafe_b64encode("".join(enc).encode()).decode()
+        def PRGA(S):
+            ''' Psudo Random Generation Algorithm (from wikipedia):
+                i := 0
+                j := 0
+                while GeneratingOutput:
+                    i := (i + 1) mod 256
+                    j := (j + S[i]) mod 256
+                    swap values of S[i] and S[j]
+                    K := S[(S[i] + S[j]) mod 256]
+                    output K
+                endwhile
+            '''
+            i = 0
+            j = 0
+            while True:
+                i = (i + 1) % MOD
+                j = (j + S[i]) % MOD
 
-        def Decode(key,message):
-            dec=[]
-            message = base64.urlsafe_b64decode(message).decode()
-            for i in range(len(message)):
-                key_c = key[i % len(key)]
-                dec.append(chr((256 + ord(message[i])- ord(key_c)) % 256))
-            
-            # return "".join(dec)
-            res = "".join(dec)
-            result = decode_caesar(res)
-            return result
+                S[i], S[j] = S[j], S[i]  # swap values
+                K = S[(S[i] + S[j]) % MOD]
+                yield K
+
+
+        def get_keystream(key):
+            ''' Takes the encryption key to get the keystream using PRGA
+                return object is a generator
+            '''
+            S = KSA(key)
+            return PRGA(S)
+
+
+        def encrypt_logic(key, text):
+            ''' :key -> encryption key used for encrypting, as hex string
+                :text -> array of unicode values/ byte string to encrpyt/decrypt
+            '''
+            # For plaintext key, use this
+            key = [ord(c) for c in key]
+            # If key is in hex:
+            # key = codecs.decode(key, 'hex_codec')
+            # key = [c for c in key]
+            keystream = get_keystream(key)
+
+            res = []
+            for c in text:
+                val = ("%02X" % (c ^ next(keystream)))  # XOR and taking hex
+                res.append(val)
+            return ''.join(res)
+
+        def encrypt_text(key, plaintext):
+            ''' :key -> encryption key used for encrypting, as hex string
+                :plaintext -> plaintext string to encrpyt
+            '''
+            plaintext = ROT13(plaintext)
+
+            plaintext = [ord(c) for c in plaintext]
+            return encrypt_logic(key, plaintext)
+
+
+        def decrypt_text(key, ciphertext):
+            ''' :key -> encryption key used for encrypting, as hex string
+                :ciphertext -> hex encoded ciphered text using RC4
+            '''
+            ciphertext = codecs.decode(ciphertext, 'hex_codec')
+            res = encrypt_logic(key, ciphertext)
+            result = codecs.decode(res, 'hex_codec').decode('utf-8')
+            return ROT13(result)       
 
         def Mode():
             if(mode.get() == 'e'):
-                Result.set(Encode(private_key.get(), Text.get()))
+                Result.set(encrypt_text(private_key.get(), Text.get()))
             elif(mode.get() == 'd'):
-                Result.set(Decode(private_key.get(), Text.get()))
+                Result.set(decrypt_text(private_key.get(), Text.get()))
             else:
                 Result.set('Invalid Mode')
 
@@ -176,7 +223,7 @@ def signin():
                 messagebox.showerror("Error", "This is not a key file, try again")
                 return
 
-            messagebox.showinfo( "", "select one or more files to encrypt")
+            messagebox.showinfo( "", "Select one or more files to Encrypt")
             # prompts the user to select a file to encrypt
             filepath = filedialog.askopenfilenames()
             # loops for each file in the list/array filepath and encrypts each file
@@ -194,14 +241,14 @@ def signin():
                     encrypted_file.write(encrypted)
             # if the filepath is empty then it means no file was selected which means that an error is prompted
             if not filepath:
-                messagebox.showerror("Error", "no file was selected, try again")
+                messagebox.showerror("Error", "No file was selected, try again")
             else:
-                messagebox.showinfo( "", "files encrypted successfully!")
+                messagebox.showinfo( "", "Files Encrypted Successfully!")
             
 
         # function to decrypt files of your choosing
         def Decrypt():
-            messagebox.showinfo( "", "select a key")
+            messagebox.showinfo( "", "Select a Key")
             # prompts the user to select a file with a key
             keypath = filedialog.askopenfilename()
             # open key file
@@ -209,7 +256,7 @@ def signin():
                 with open(keypath, "rb") as filekey:
                     key = filekey.read()
             except FileNotFoundError:
-                messagebox.showerror("Error", "no file was selected, try again")
+                messagebox.showerror("Error", "No file was selected, try again")
                 return
 
             # if the file selected doesn't have a key in it, it stops the function and gives the user an error
@@ -220,7 +267,7 @@ def signin():
                 messagebox.showerror("Error", "This is not a key file, try again")
                 return
 
-            messagebox.showinfo( "", "select one or more files to decrypt")
+            messagebox.showinfo( "", "Select one or more files to Decrypt")
             # prompts the user to select a file to decrypt
             filepath = filedialog.askopenfilenames()
             # loops for each file in the list/array filepath and decrypts each file
@@ -236,9 +283,9 @@ def signin():
                     dec_file.write(decrypted)
             # if the filepath is empty then it means no file was selected which means that an error is prompted
             if not filepath:
-                messagebox.showerror("Error", "no file was selected, try again")
+                messagebox.showerror("Error", "No file was selected, try again")
             else:
-                messagebox.showinfo( "", "files decrypted successfully!")
+                messagebox.showinfo( "", "Files decrypted successfully!")
 
 #######END FILE BROWSE ENCODE AND DECODE================================================================================================
 
@@ -288,7 +335,7 @@ def signup_command():
         password = pass2hash.hexdigest()
 
         confirm_password = confirm_code.get()
-        confirm2hash = hashlib.md5(confirm_password.encode())  # encrypt confirma password using md5 hash
+        confirm2hash = hashlib.md5(confirm_password.encode())  # encrypt confirm password using md5 hash
         confirm_password = confirm2hash.hexdigest()
 
         if password == confirm_password:
